@@ -11,16 +11,20 @@
 #include "KPlayerTrade.h"
 #include "KPlayerTeam.h"
 #include "KPlayerPK.h"
-#include "KPlayerAI.h"
 #include "KPlayerTong.h"
-#include "KPlayerChatRoom.h"
 #include "KItemList.h"
 #include "KNpc.h"
 #include "KSkills.h"
-#include <fstream> // TamLTM
-#include <string> // TamLTM
+
 #include "KPlayerDef.h"
 
+#ifndef _SERVER
+#include <string>       
+#include <winsock2.h>   
+#include <ws2tcpip.h>   
+#endif
+
+#define		MAX_ANSWERNUM					50
 #define		PLAYER_LIFE_REPLENISH			0
 #define		PLAYER_MANA_REPLENISH			0
 #define		PLAYER_STAMINA_GAIN				1
@@ -28,47 +32,53 @@
 
 #define		STRENGTH_SET_DAMAGE_VALUE		5
 #define		DEXTERITY_SET_DAMAGE_VALUE		5
-#define		ENGERGY_SET_DAMAGE_VALUE		0
 
 #define		MAX_AVENGE_NUM					4
 
-enum	UIInfo //脚本通知显示的界面类型
+enum	UIInfo //陆脜卤戮脥篓脰陋脧脭脢戮碌脛陆莽脙忙脌脿脨脥
 {
 	UI_SELECTDIALOG,
-	UI_SELDIALOG,
+	UI_TRADEDIALOG,
 	UI_TALKDIALOG,
 	UI_NOTEINFO,
-	UI_MSGINFO,//自右向左冒出来的信息
-	UI_NEWSINFO,//新闻
-	UI_NEWSINFO1,
+	UI_MSGINFO,//脳脭脫脪脧貌脳贸脙掳鲁枚脌麓碌脛脨脜脧垄
+	UI_NEWSINFO,//脨脗脦脜
 	UI_PLAYMUSIC,
 	UI_OPENTONGUI,
 };
 
-// 重生点位置信息
+// 脰脴脡煤碌茫脦禄脰脙脨脜脧垄
 typedef struct PLAYER_REVIVAL_POS_DATA
 {
-	int				m_nSubWorldID;		// 重生点地图
-	int				m_ReviveID;			// 重生点索引
-	int				m_nMpsX;			// 重生点地图位置 x
-	int				m_nMpsY;			// 重生点地图位置 y
+	int				m_nSubWorldID;		// 脰脴脡煤碌茫碌脴脥录
+	int				m_ReviveID;			// 脰脴脡煤碌茫脣梅脪媒
+	int				m_nMpsX;			// 脰脴脡煤碌茫碌脴脥录脦禄脰脙 x
+	int				m_nMpsY;			// 脰脴脡煤碌茫碌脴脥录脦禄脰脙 y
 } PLAYER_REVIVAL_POS;
 
 typedef struct
 {
-	int				m_nSubWorldId;		// 传送门世界ID
-	int				m_nTime;			// 传送门保持时间
+	int				m_nSubWorldId;		// 麓芦脣脥脙脜脢脌陆莽ID
+	int				m_nTime;			// 麓芦脣脥脙脜卤拢鲁脰脢卤录盲
 	int				m_nMpsX;
 	int				m_nMpsY;
 } PLAYER_TOWNPORTAL_POS;
 
-typedef struct
+typedef struct 
 {
 	DWORD			m_dwMapID;
 	int				m_nX;
 	int				m_nY;
 } PLAYER_EXCHANGE_POS;
 
+typedef struct BuySellInfo_struct
+{
+	int m_nBuyIdx;
+	DWORD m_SubWorldID;
+	int m_nMpsX;
+	int m_nMpsY;
+	void Clear() { m_nBuyIdx = -1; m_SubWorldID = -1; m_nMpsX = 0; m_nMpsY = 0; }
+} BuySellInfo;
 class KIniFile;
 
 
@@ -86,257 +96,155 @@ private:
 	int				m_nRightSkillID;
 	int				m_nRightSkillLevel;
 	BOOL			m_MouseDown[2];
-	int				m_nExtPoint;// TamLTM fix xu;
-	int				m_nChangeExtPoint;
-
 #endif
 
 #ifdef _SERVER
-	PLAYER_REVIVAL_POS		m_sLoginRevivalPos;	// 登入重生点位置（会存盘）
-	PLAYER_REVIVAL_POS		m_sDeathRevivalPos;	// 死亡重生点（默认为登入重生点，不存盘）
-	PLAYER_TOWNPORTAL_POS	m_sPortalPos;		// 传送门位置
+	PLAYER_REVIVAL_POS		m_sLoginRevivalPos;	// 碌脟脠毛脰脴脡煤碌茫脦禄脰脙拢篓禄谩麓忙脜脤拢漏
+	PLAYER_REVIVAL_POS		m_sDeathRevivalPos;	// 脣脌脥枚脰脴脡煤碌茫拢篓脛卢脠脧脦陋碌脟脠毛脰脴脡煤碌茫拢卢虏禄麓忙脜脤拢漏
+	PLAYER_TOWNPORTAL_POS	m_sPortalPos;		// 麓芦脣脥脙脜脦禄脰脙
 	BOOL			m_bUseReviveIdWhenLogin;
-	int				m_nExtPoint;// TamLTM fix xu;
-	int				m_nChangeExtPoint; // TamLTM fix xu;
+	int				m_nExtPoint;				// 禄卯露炉碌茫脢媒
+	int				m_nChangeExtPoint;			// 卤盲露炉碌脛碌茫脢媒
 #endif
-	int				m_nPhysicsSkillID;		//当前玩家的物理攻击技能
+	int				m_nPhysicsSkillID;		//碌卤脟掳脥忙录脪碌脛脦茂脌铆鹿楼禄梅录录脛脺
 	int				m_nPeapleIdx;
 	int				m_nObjectIdx;
 	int				m_nPickObjectIdx;
-	int				m_nPlayerIndex;				// 本实例在 Player 数组中的位置
+	int				m_nPlayerIndex;				// 卤戮脢碌脌媒脭脷 Player 脢媒脳茅脰脨碌脛脦禄脰脙
 	KCacheNode *	m_pLastScriptCacheNode;
 
 public:
-
 #ifdef _SERVER
-	char			m_szLastName[32];//Doi ten nhan vat
-	DWORD			m_dwTaskExcuteScriptId;
-	char			m_szTaskExcuteFun[32];
-	char			m_szLastInput[32];
-//	BYTE			m_byLixian;
 	PLAYER_EXCHANGE_POS		m_sExchangePos;
 	KTimerTaskFun	m_TimerTask;
 	BOOL			m_bIsQuiting;
 	UINT			m_uMustSave;
 	DWORD			m_ulLastSaveTime;
 	DWORD			m_dwLoginTime;
-	//DWORD			m_uLastPingTime;
-	char			AccountName[32];
-	void*			m_pStatusLoadPlayerInfo;	//加载玩家信息时用
-	BYTE*			m_pCurStatusOffset;			//二进制时，记录读到指针位置了
-	BOOL			m_bFinishLoading;			//完成加载
-	BYTE			m_SaveBuffer[64 * 1024];	//保存缓冲
-	int				m_nLastNetOperationTime;	//最后一次网络操作时间
+//	DWORD			m_uLastPingTime;
+	char			m_AccoutName[32];				
+	void*			m_pStatusLoadPlayerInfo;	//录脫脭脴脥忙录脪脨脜脧垄脢卤脫脙
+	BYTE*			m_pCurStatusOffset;			//露镁陆酶脰脝脢卤拢卢录脟脗录露脕碌陆脰赂脮毛脦禄脰脙脕脣
+	BOOL			m_bFinishLoading;			//脥锚鲁脡录脫脭脴
+	BYTE			m_SaveBuffer[64 * 1024];	//卤拢麓忙禄潞鲁氓
+	int				m_nLastNetOperationTime;	//脳卯潞贸脪禄麓脦脥酶脗莽虏脵脳梅脢卤录盲
 	BOOL			m_bSleepMode;
 	KList			m_PlayerWayPointList;		//
 	KList			m_PlayerStationList;
-	int				m_nViewEquipTime;			// 最后一次察看他人装备的时间
+	int				m_nViewEquipTime;			// 脳卯潞贸脪禄麓脦虏矛驴麓脣没脠脣脳掳卤赂碌脛脢卤录盲
 	int				m_nPrePayMoney;
-
 	enum
 	{
 		FF_CHAT = 0x01,
 	};
-	int				m_nForbiddenTm;			// 禁止标志
-	BOOL			m_bForbidEnmity;
-	BOOL			m_bForbidTrade;
-	BOOL			m_bForbidUseTownP;
-	BOOL			m_bForbidName;
-	BOOL			m_bForbidCamp;
-	BOOL			m_PlayerDBLoad;
+	int				m_nForbiddenFlag;			// 陆没脰鹿卤锚脰戮
 #endif
 
 #ifndef _SERVER
-	int				m_RunStatus;				// 是跑还是走
-	int				m_nNextLevelLeadExp;		// 统率力下一级经验值
-	int				m_nSendMoveFrames;	// 用于控制客户端向服务器发送移动(走或跑)协议的频率，使之不能发送大量的移动协议，减小带宽压力
-	DWORD			m_dwRightMouse;
-	int				m_nLastNpcIndex;
-	TMissionLadderSelfInfo m_MissionData;
-	TMissionLadderInfo m_MissionRank[MISSION_STATNUM];
-	BOOL			m_bDebugMode;
+	int				m_RunStatus;				// 脢脟脜脺禄鹿脢脟脳脽
+	DWORD			m_dwNextLevelLeadExp;		// 脥鲁脗脢脕娄脧脗脪禄录露戮颅脩茅脰碌
+	int				m_nSendMoveFrames;			// 脫脙脫脷驴脴脰脝驴脥禄搂露脣脧貌路镁脦帽脝梅路垄脣脥脪脝露炉(脳脽禄貌脜脺)脨颅脪茅碌脛脝碌脗脢拢卢脢鹿脰庐虏禄脛脺路垄脣脥麓贸脕驴碌脛脪脝露炉脨颅脪茅拢卢录玫脨隆麓酶驴铆脩鹿脕娄
 #endif
 
 	KIndexNode		m_Node;
 	GUID			m_Guid;
 	BOOL			m_bExchangeServer;
-	DWORD			m_dwID;						// 玩家的32位ID
-	int				m_nIndex;					// 玩家的Npc编号
-	int				m_nNetConnectIdx;			// 第几个网络连接
-	KItemList		m_ItemList;					// 玩家的装备列表
-	BuySellInfo		m_BuyInfo;					// 进行的交易列表
-	KPlayerMenuState	m_cMenuState;			// 是否处于交易或队伍开放状态
-	KTrade			m_cTrade;					// 交易模块
+	int				m_DebugMode;
+	DWORD			m_dwID;						// 脥忙录脪碌脛32脦禄ID
+	int				m_nIndex;					// 脥忙录脪碌脛Npc卤脿潞脜
+	int				m_nNetConnectIdx;			// 碌脷录赂赂枚脥酶脗莽脕卢陆脫
+	KItemList		m_ItemList;					// 脥忙录脪碌脛脳掳卤赂脕脨卤铆
+	BuySellInfo		m_BuyInfo;					// 陆酶脨脨碌脛陆禄脪脳脕脨卤铆
+	KPlayerMenuState	m_cMenuState;			// 脢脟路帽麓娄脫脷陆禄脪脳禄貌露脫脦茅驴陋路脜脳麓脤卢
+	KTrade			m_cTrade;					// 陆禄脪脳脛拢驴茅
+	int				m_nAttributePoint;			// 脦麓路脰脜盲脢么脨脭碌茫
+	int				m_nSkillPoint;				// 脦麓路脰脜盲录录脛脺碌茫
 
-	//TamLTM check nhat do cua nguoi khac
-	BOOL			m_bNotPickUpItem;
-	BOOL			m_bNotPickUpMoney;
-	//end code
+	int				m_nStrength;				// 脥忙录脪碌脛禄霉卤戮脕娄脕驴拢篓戮枚露篓禄霉卤戮脡脣潞娄拢漏
+	int				m_nDexterity;				// 脥忙录脪碌脛禄霉卤戮脙么陆脻拢篓戮枚露篓脙眉脰脨隆垄脤氓脕娄拢漏
+	int				m_nVitality;				// 脥忙录脪碌脛禄霉卤戮禄卯脕娄拢篓戮枚露篓脡煤脙眉隆垄脤氓脕娄拢漏
+	int				m_nEngergy;					// 脥忙录脪碌脛禄霉卤戮戮芦脕娄拢篓戮枚露篓脛脷脕娄拢漏
+	int				m_nLucky;					// 脥忙录脪碌脛禄霉卤戮脭脣脝酶拢篓脫掳脧矛碌脙碌陆脳掳卤赂碌脛潞脙禄碌拢漏
+	BYTE			m_btChatSpecialChannel;		
 
-#ifdef _SERVER
-	PLAYERTRADE		m_PTrade;			// 是否处于交易或队伍开放状态
-#endif
-	int				m_nAttributePoint;			// 未分配属性点
-	int				m_nSkillPoint;				// 未分配技能点
+	int				m_nCurStrength;				// 脥忙录脪碌脛碌卤脟掳脕娄脕驴拢篓戮枚露篓禄霉卤戮脡脣潞娄拢漏
+	int				m_nCurDexterity;			// 脥忙录脪碌脛碌卤脟掳脙么陆脻拢篓戮枚露篓脙眉脰脨隆垄脤氓脕娄拢漏
+	int				m_nCurVitality;				// 脥忙录脪碌脛碌卤脟掳禄卯脕娄拢篓戮枚露篓脡煤脙眉隆垄脤氓脕娄拢漏
+	int				m_nCurEngergy;				// 脥忙录脪碌脛碌卤脟掳戮芦脕娄拢篓戮枚露篓脛脷脕娄拢漏
+	int				m_nCurLucky;				// 脥忙录脪碌脛碌卤脟掳脭脣脝酶拢篓脫掳脧矛碌脙碌陆脳掳卤赂碌脛潞脙禄碌拢漏
 
-	int				m_nStrength;				// 玩家的基本力量（决定基本伤害）
-	int				m_nDexterity;				// 玩家的基本敏捷（决定命中、体力）
-	int				m_nVitality;				// 玩家的基本活力（决定生命、体力）
-	int				m_nEngergy;					// 玩家的基本精力（决定内力）
-	int				m_nLucky;					// 玩家的基本运气（影响得到装备的好坏）
+	int				m_nExp;						// 碌卤脟掳戮颅脩茅脰碌(碌卤脟掳碌脠录露脭脷npc脡铆脡脧)
+	int				m_nNextLevelExp;			// 脧脗脪禄录露戮颅脩茅脰碌
 
-	int				m_nCurStrength;				// 玩家的当前力量（决定基本伤害）
-	int				m_nCurDexterity;			// 玩家的当前敏捷（决定命中、体力）
-	int				m_nCurVitality;				// 玩家的当前活力（决定生命、体力）
-	int				m_nCurEngergy;				// 玩家的当前精力（决定内力）
-
-	int				m_nExp;						// 当前经验值(当前等级在npc身上)
-	int				m_nNextLevelExp;			// 下一级经验值
-
-	int				m_nLeadExp;				// 统率力经验值
-	int				m_nLeadLevel;				// 统率力等级
-	char				Name[32];
-	int				m_ImagePlayer;
-
-	KPlayerTeam		m_cTeam;					// 玩家的组队信息
-	KPlayerFaction	m_cFaction;					// 玩家的门派信息
+	DWORD			m_dwLeadExp;				// 脥鲁脗脢脕娄戮颅脩茅脰碌
+	DWORD			m_dwLeadLevel;				// 脥鲁脗脢脕娄碌脠录露
+	char			m_PlayerName[32];
+	KPlayerTeam		m_cTeam;					// 脥忙录脪碌脛脳茅露脫脨脜脧垄
+	KPlayerFaction	m_cFaction;					// 脥忙录脪碌脛脙脜脜脡脨脜脧垄
 
 	KPlayerChat		m_cChat;
 
-	KPlayerTask		m_cTask;					// 玩家任务系统(变量)
+	KPlayerTask		m_cTask;					// 脥忙录脪脠脦脦帽脧碌脥鲁(卤盲脕驴)
 
-	KPlayerPK		m_cPK;						// PK关系处理
+	KPlayerPK		m_cPK;						// PK鹿脴脧碌麓娄脌铆
 
-	KPlayerAI		m_cAI;
+	KPlayerTong		m_cTong;					// 脳脭录潞碌脛掳茂禄谩脨脜脧垄
 
-	KPlayerTong		m_cTong;					// 自己的帮会信息
-
-	KPlayerChatRoom	m_cRoom;					// 自己的帮会信息
-
-	//TamLTM Toi uu hinh anh game
-	BOOL            m_bIsHideNpc;    //hide noc
-	BOOL            m_bIsHidePlayer; // hide player
-	//end code
-
-	//TamLTM Fix set save pass Khoa ruong
-	BOOL			m_bLock; //1 SetSaveVal
-	BOOL			m_bOk; //2 CheckSavePw
-	//end code
-
-	DWORD			m_dwDeathScriptId;			//
-	DWORD			m_dwDamageScriptId;			//
+	DWORD			m_dwDeathScriptId;			// 
 
 	char			m_szTaskAnswerFun[MAX_ANSWERNUM][32];
-	int				m_nAvailableAnswerNum;//当前选择界面下，最大回答数。
-	bool			m_bWaitingPlayerFeedBack;	//当前是否正等待玩家在客户端的反馈。该状态下，当前脚本不置空.类式对话选择情况
-//	DWORD			m_dwOutOfDateFeedBackTime;	//当前等待玩家与服务器脚本交互的最大限定时刻，到了这个游戏时间如果玩家仍未反馈则视作废。
+	int				m_nAvailableAnswerNum;//碌卤脟掳脩隆脭帽陆莽脙忙脧脗拢卢脳卯麓贸禄脴麓冒脢媒隆拢
+	bool			m_bWaitingPlayerFeedBack;	//碌卤脟掳脢脟路帽脮媒碌脠麓媒脥忙录脪脭脷驴脥禄搂露脣碌脛路麓脌隆隆拢赂脙脳麓脤卢脧脗拢卢碌卤脟掳陆脜卤戮虏禄脰脙驴脮.脌脿脢陆露脭禄掳脩隆脭帽脟茅驴枚
+//	DWORD			m_dwOutOfDateFeedBackTime;	//碌卤脟掳碌脠麓媒脥忙录脪脫毛路镁脦帽脝梅陆脜卤戮陆禄禄楼碌脛脳卯麓贸脧脼露篓脢卤驴脤拢卢碌陆脕脣脮芒赂枚脫脦脧路脢卤录盲脠莽鹿没脥忙录脪脠脭脦麓路麓脌隆脭貌脢脫脳梅路脧隆拢
 	BYTE			m_btTryExecuteScriptTimes;	//
 	//char			m_CurScriptName[128];
 	int				m_nWorldStat;
 	int				m_nSectStat;
-	int				m_nKillPeopleNumber;
 
-	BYTE			m_nLockPKState;
-
-	DWORD			m_TalkUiScriptId;
-	DWORD			m_SelUiScriptId;
-
-	int				m_nPaceBarTime;
-	int				m_nPaceBarTimeMax;
-	int				m_nIndexProgressBarIndex;
 public:
 	KPlayer();
 	~KPlayer();
 
-	void			SetLockMove(LockMoveItem *LockMove);
-	LockMoveItem*	GetLockMove() {return &m_LockMove;};
-#ifdef _SERVER
-	void			SetLevel(int nLevel);
-	void			UpdateSQL(IN char *cAccName, IN int nExtPoint, bool iCheckExtPoint); //TamLTM add update sql
-	void			GetMacInSQL(IN char *cAccountName); //TamLTM sql
-	void			GetHardwareIDPC(); //Get id cho phan cung trong pc 1 may
-	void			GetNameForDatabase(int numberChange); //Get id cho phan cung trong pc 1 may
-	// Fetches the MAC address and prints it
-	void			GetMACaddress();
-	void			SetExtPoint(int nPoint, int nChangePoint); //TamLTM fix xu;
-	int				GetExtPoint();//TamLTM fix xu;
-	int				GetExtPointChanged();//TamLTM fix xu;
-	BOOL			PayExtPoint(int nPoint);
-#endif
-	void			SetLockState(BOOL bLock);
-	BOOL			GetLockState();
-	void			SetEquipExpandTime(int dwTime);
-	void			SetExpandBoxNum(int nNum);
-
-	void			GetDataSQL();
-
-	//TamLTM Get SQL Database
-	int				GetMacSQL();
-
-	//TamLTM Get Update Version game
-	int				GetVersionGame();
-
-	void			SetPlayerIndex(int nNo);					// 设定 m_nPlayerIndex
-	void			GetAboutPos(KMapPos *pMapPos);			// 获得玩家附近一个空位置
-	int				GetPlayerIndex();							// 获得本实例在 Player 数组中的位置
+	void			SetPlayerIndex(int nNo);					// 脡猫露篓 m_nPlayerIndex
+	void			GetAboutPos(KMapPos *pMapPos);			// 禄帽碌脙脥忙录脪赂陆陆眉脪禄赂枚驴脮脦禄脰脙
+	int				GetPlayerIndex();							// 禄帽碌脙卤戮脢碌脌媒脭脷 Player 脢媒脳茅脰脨碌脛脦禄脰脙
 	DWORD			GetPlayerID(){return m_dwID;};
-	void			GetFaction(char *lpszName);	// 获得当前门派名称 not end
-	void			GetFactionName(char *lpszName);	// 获得当前门派名称 not end
-	int				GetFactionCamp();
-	int				GetFactionNo();
+	void			GetFactionName(char *lpszName, int nSize);	// 禄帽碌脙碌卤脟掳脙脜脜脡脙没鲁脝 not end
+	void			ChatFriendOnLine(DWORD dwID, int nFriendIdx);// 禄帽碌脙脥篓脰陋脛鲁潞脙脫脩脡脧脧脽脕脣
 	BOOL			ExecuteScript(char * ScriptFileName, char * szFunName, int nParam = 0);
 	BOOL			ExecuteScript(char * ScriptFileName, char * szFunName, char * szParams);
 	BOOL			ExecuteScript(DWORD dwScriptId, char * szFunName, char *  szParams);
 	BOOL			ExecuteScript(DWORD dwScriptId,  char * szFunName, int nParam);
+	BOOL			DoScript(char * ScriptCommand);				//脰麓脨脨脛鲁赂枚陆脜卤戮脰赂脕卯
 
-	BOOL			ExecuteScript2Param(char * ScriptFileName, char * szFunName, int nResultCount, int nParam1 = 0, int nParam2 = 0);
-	BOOL			ExecuteScript2Param(DWORD dwScriptId, char * cFuncName, int nResultCount, int nParam1, int nParam2);
-		;
-	BOOL			ExecuteScript3Param(char * ScriptFileName, char * szFunName, int nResultCount, int nParam1 = 0, int nParam2 = 0, int nParam3 = 0);
-	BOOL 			ExecuteScript3Param(DWORD dwScriptId, char * cFuncName, int nResultCount, int nParam1, int nParam2, int nParam3);
-
-	// TamLTM kham
-	BOOL			ExecuteScript2(char * ScriptFileName, char * szFunName, int nParam1 = 0, int nParam2 = 0);
-	BOOL			ExecuteScript2(char * ScriptFileName, char * szFunName, char * szParams1, char * szParams2);
-	BOOL			ExecuteScript2(DWORD dwScriptId, char * szFunName, char *  szParams1, char *  szParams2);
-	BOOL			ExecuteScript2(DWORD dwScriptId,  char * szFunName, int nParam1, int nParam2);
-	//end code
-
-	BOOL			DoScript(char * ScriptCommand);				//执行某个脚本指令
-	void			SendTitle();
-
-	void			ChangeCurStrength(int nData);			// 改变当前力量(当 nData 小于 0 时，减少)
-	void			ChangeCurDexterity(int nData);			// 改变当前敏捷(当 nData 小于 0 时，减少)
-	void			ChangeCurVitality(int nData);			// 改变当前活力(当 nData 小于 0 时，减少)
-	void			ChangeCurEngergy(int nData);			// 改变当前精力(当 nData 小于 0 时，减少)
+	void			ChangeCurStrength(int nData);			// 赂脛卤盲碌卤脟掳脕娄脕驴(碌卤 nData 脨隆脫脷 0 脢卤拢卢录玫脡脵)
+	void			ChangeCurDexterity(int nData);			// 赂脛卤盲碌卤脟掳脙么陆脻(碌卤 nData 脨隆脫脷 0 脢卤拢卢录玫脡脵)
+	void			ChangeCurVitality(int nData);			// 赂脛卤盲碌卤脟掳禄卯脕娄(碌卤 nData 脨隆脫脷 0 脢卤拢卢录玫脡脵)
+	void			ChangeCurEngergy(int nData);			// 赂脛卤盲碌卤脟掳戮芦脕娄(碌卤 nData 脨隆脫脷 0 脢卤拢卢录玫脡脵)
 	BOOL			ExecuteScript(char * ScriptFileName);
 	void			Release();
-	void			Active();								// 玩家每次游戏循环都需要处理的东西
-	void			ProcessMsg(KWorldMsgNode *lpMsg);		// 处理世界消息，转为NPC命令
+	void			Active();								// 脥忙录脪脙驴麓脦脫脦脧路脩颅禄路露录脨猫脪陋麓娄脌铆碌脛露芦脦梅
+	void			ProcessMsg(KWorldMsgNode *lpMsg);		// 麓娄脌铆脢脌陆莽脧没脧垄拢卢脳陋脦陋NPC脙眉脕卯
+	
+	LPSTR			GetPlayerName() { return m_PlayerName; };
 
-	LPSTR			GetPlayerName() { return Name; };
+	BOOL			NewPlayerGetBaseAttribute(int Series);	// 脨脗脥忙录脪碌脟脗陆脢卤赂霉戮脻脦氓脨脨脢么脨脭虏煤脡煤 脕娄脕驴 脙么陆脻 禄卯脕娄 戮芦脕娄 脣脛脧卯脢媒脰碌
+	void			AddBaseLucky(int nData);				// 脭枚录脫禄霉卤戮脭脣脝酶
 
-	BOOL			NewPlayerGetBaseAttribute(int Series);	// 新玩家登陆时根据五行属性产生 力量 敏捷 活力 精力 四项数值
-	void			AddBaseLucky(int nData);				// 增加基本运气
-#ifdef _SERVER
-//	void			AddExp(int nExp, int nTarLevel);		// 增加经验(原始数据，还未经过处理)
-	void			AddExp(int nExp, int nTarLevel, BOOL bCheck = FALSE);		// TamLTM fix exp
-	void			AddSelfExp(int nExp, int nTarLevel);	// 增加经验(不需要再经过队伍分配的处理，但需要考虑被砍死npc的等级)
-	void			AddSkillExp(int nExp);
-	void			DirectAddExp(int nExp);					// 直接增加经验值，不考虑其他因素
-	void			LevelUp();								// 升一级
-#endif
-	void			AddLeadExp(int nExp);					// 增加统率力经验
-	void			SetLeadLevel(int nLevel);					// 增加统率力经验
+	void			AddExp(int nExp, int nTarLevel);		// 脭枚录脫戮颅脩茅(脭颅脢录脢媒戮脻拢卢禄鹿脦麓戮颅鹿媒麓娄脌铆)
+	void			AddSelfExp(int nExp, int nTarLevel);	// 脭枚录脫戮颅脩茅(虏禄脨猫脪陋脭脵戮颅鹿媒露脫脦茅路脰脜盲碌脛麓娄脌铆拢卢碌芦脨猫脪陋驴录脗脟卤禄驴鲁脣脌npc碌脛碌脠录露)
+	void			DirectAddExp(int nExp);					// 脰卤陆脫脭枚录脫戮颅脩茅脰碌拢卢虏禄驴录脗脟脝盲脣没脪貌脣脴
+	void			LevelUp();								// 脡媒脪禄录露
+	void			AddLeadExp(int nExp);					// 脭枚录脫脥鲁脗脢脕娄戮颅脩茅
 	void			UpdataCurData();
-	void			ReCalcEquip();							// 重新计算身上的装备
-	void			ReCalcState();
-	void			ChangePlayerCamp(int nCamp);			// 改变玩家阵营
-	void			Revive(int nType);
+	void			ReCalcEquip();							// 脰脴脨脗录脝脣茫脡铆脡脧碌脛脳掳卤赂
+	void			ReCalcState();							// 脰脴脨脗录脝脣茫脡铆脡脧碌脛脳麓脤卢
 
-	BOOL			CheckTrading(bool bOverLookTrade = false);
+	void			ChangePlayerCamp(int nCamp);			// 赂脛卤盲脥忙录脪脮贸脫陋
+	void			Revive(int nType);						// 脰脴脡煤	
+
+	BOOL			CheckTrading();
 	void			SetFirstDamage();
-	void			SetFirstMagic();
 	void			SetBaseAttackRating();
 	void			SetBaseDefence();
 	void			SetBaseResistData();
@@ -346,74 +254,62 @@ public:
 	{
 		if (nPhysicsSkillID <= 0) return ;
 		ISkill * pISkill =  g_SkillManager.GetSkill(nPhysicsSkillID, 1);
-		if (!pISkill)
+		if (!pISkill) 
             return ;
-
+		
         if (nPhysicsSkillID > 0 && pISkill->IsPhysical())
 			m_nPhysicsSkillID = nPhysicsSkillID;
 	};
 
-	int				m_nMacDatabase;//TamLTM Get nMac database
-	int				m_nVersionGame;//TamLTM Get m_nVersionGame database
-	BOOL			m_bLockState;
-	int				m_dwEquipExpandTime;
-	int				m_btRepositoryNum;
-	LockMoveItem	m_LockMove;
 #ifndef _SERVER
-	void			SetExtPoint(int nPoint); // set gia tri xu
-	int				GetExtPoint() { return m_nExtPoint; }; // lay gia tri xu
 	int				GetTargetNpc() { return m_nPeapleIdx; };
 	int				GetTargetObj() { return m_nObjectIdx; };
 	void			SetTargetNpc(int n) { m_nPeapleIdx = n; };
 	void			SetTargetObj(int n) { m_nObjectIdx = n; };
 	void			FindSelectNpc(int x, int y, int nRelation);
 	void			FindSelectObject(int x, int y);
-	void			Walk(int nDir, int nSpeed);
+	void			Walk(int nDir, int nSpeed);	
 	void			TurnLeft();
 	void			TurnRight();
 	void			TurnBack();
-	BOOL			ConformIdx(int nIdx);
-	void			GetEchoDamage(int* nMin, int* nMax, int nType);// 获取界面需要显示的伤害值
+	void			DrawSelectInfo();
+	BOOL			ConformIdx(int nIdx);	
+	void			GetEchoDamage(int* nMin, int* nMax, int nType);// 禄帽脠隆陆莽脙忙脨猫脪陋脧脭脢戮碌脛脡脣潞娄脰碌
+	void			ProcessInputMsg(UINT uMsg, WPARAM wParam, LPARAM lParam);// 麓娄脌铆录眉脜脤脢贸卤锚脧没脧垄
+	void			RecvSyncData();								// 陆脫脢脮脥卢虏陆脢媒戮脻
 
-	// TamLTM damage Attack ho tro skill 5x 6x do chinh xac
-	void			GetEchoAttack(int* nAttack, int nType);
-	//end code
-
-	void			ProcessInputMsg(UINT uMsg, WPARAM wParam, LPARAM lParam);// 处理键盘鼠标消息
-	void			RecvSyncData();								// 接收同步数据
-
-	void			ApplyTeamInfo(DWORD dwNpcID);				// 向服务器申请查询某个npc所在队伍的信息
-	void			ApplySelfTeamInfo();						// 向服务器申请查询玩家自身的队伍情况
-	BOOL			ApplyCreateTeam();//char *lpszTeamName);		// 玩家向服务器申请创建队伍
-	BOOL			ApplyTeamOpenClose(BOOL bFlag);				// 队长向服务器申请开放、关闭队伍是否允许加入成员状态
-	BOOL			ApplyTeamPKFollow(BOOL bFlag);
-	BOOL			ApplyTeamModePick(int nSel);
-	void			ApplyAddTeam(int nNpcIndex);				// 玩家向服务器申请加入某个队伍
-	void			AcceptTeamMember(DWORD dwNpcID);			// 玩家通知服务器接受某个npc为队伍成员
-	void			TeamDropApplyOne(DWORD dwNpcID);			// 队长删除加入队伍申请列表中的某个npc
-	void			LeaveTeam();								// 通知服务器本玩家离开队伍
-	void			TeamKickMember(DWORD dwNpcID);				// 队长通知服务器踢除某个队员
-	void			ApplyTeamChangeCaptain(DWORD dwNpcID);		// 队长向服务器申请把自己的队长身份交给别的队员
-	void			ApplyTeamDismiss();							// 队长向服务器申请解散队伍
-	void			ApplySetPK(BOOL bPK);						// 玩家向服务器申请打开、关闭pk开关
-	void			SendChat(KUiMsgParam *pMsg, char *lpszSentence);// 客户端发送聊天语句给服务器
-	void			ApplyAddBaseAttribute(int nAttribute, int nNo);// 队长向服务器申请增加四项属性中某一项的点数(0=Strength 1=Dexterity 2=Vitality 3=Engergy)
-	BOOL			ApplyAddSkillLevel(int nSkillID, int nAddPoint);// 向服务器申请某个技能升级
-	BOOL			ApplyUseItem(int nItemID, ItemPos SrcPos);	// 向服务器申请使用某个物品（鼠标右键点击该物品）
-	BOOL			CanUseItem(int nIdx);
-	void			PickUpObj(int nObjIndex);					// 客户端鼠标点击obj检起某个物品，向服务器发消息
-	void			ObjMouseClick(int nObjIndex);				// 客户端鼠标点击obj，向服务器发消息
-	void			MoveItem(ItemPos DownPos, ItemPos UpPos);	// DownPos 不能是手，UpPos 必须是手
+	void			ApplyTeamInfo(DWORD dwNpcID);				// 脧貌路镁脦帽脝梅脡锚脟毛虏茅脩炉脛鲁赂枚npc脣霉脭脷露脫脦茅碌脛脨脜脧垄
+	void			ApplySelfTeamInfo();						// 脧貌路镁脦帽脝梅脡锚脟毛虏茅脩炉脥忙录脪脳脭脡铆碌脛露脫脦茅脟茅驴枚
+	BOOL			ApplyCreateTeam();//char *lpszTeamName);		// 脥忙录脪脧貌路镁脦帽脝梅脡锚脟毛麓麓陆篓露脫脦茅
+	BOOL			ApplyTeamOpenClose(BOOL bFlag);				// 露脫鲁陇脧貌路镁脦帽脝梅脡锚脟毛驴陋路脜隆垄鹿脴卤脮露脫脦茅脢脟路帽脭脢脨铆录脫脠毛鲁脡脭卤脳麓脤卢
+	void			ApplyAddTeam(int nNpcIndex);				// 脥忙录脪脧貌路镁脦帽脝梅脡锚脟毛录脫脠毛脛鲁赂枚露脫脦茅
+	void			AcceptTeamMember(DWORD dwNpcID);			// 脥忙录脪脥篓脰陋路镁脦帽脝梅陆脫脢脺脛鲁赂枚npc脦陋露脫脦茅鲁脡脭卤
+	void			TeamDropApplyOne(DWORD dwNpcID);			// 露脫鲁陇脡戮鲁媒录脫脠毛露脫脦茅脡锚脟毛脕脨卤铆脰脨碌脛脛鲁赂枚npc
+	void			LeaveTeam();								// 脥篓脰陋路镁脦帽脝梅卤戮脥忙录脪脌毛驴陋露脫脦茅
+	void			TeamKickMember(DWORD dwNpcID);				// 露脫鲁陇脥篓脰陋路镁脦帽脝梅脤脽鲁媒脛鲁赂枚露脫脭卤
+	void			ApplyTeamChangeCaptain(DWORD dwNpcID);		// 露脫鲁陇脧貌路镁脦帽脝梅脡锚脟毛掳脩脳脭录潞碌脛露脫鲁陇脡铆路脻陆禄赂酶卤冒碌脛露脫脭卤
+	void			ApplyTeamDismiss();							// 露脫鲁陇脧貌路镁脦帽脝梅脡锚脟毛陆芒脡垄露脫脦茅
+	void			ApplySetPK(BOOL bPK);						// 脥忙录脪脧貌路镁脦帽脝梅脡锚脟毛麓貌驴陋隆垄鹿脴卤脮pk驴陋鹿脴
+	void			ApplyFactionData();							// 脥忙录脪脧貌路镁脦帽脝梅脡锚脟毛脙脜脜脡脢媒戮脻
+	void			SendChat(KUiMsgParam *pMsg, char *lpszSentence);// 驴脥禄搂露脣路垄脣脥脕脛脤矛脫茂戮盲赂酶路镁脦帽脝梅
+	void			ApplyAddBaseAttribute(int nAttribute, int nNo);// 露脫鲁陇脧貌路镁脦帽脝梅脡锚脟毛脭枚录脫脣脛脧卯脢么脨脭脰脨脛鲁脪禄脧卯碌脛碌茫脢媒(0=Strength 1=Dexterity 2=Vitality 3=Engergy)
+	BOOL			ApplyAddSkillLevel(int nSkillID, int nAddPoint);// 脧貌路镁脦帽脝梅脡锚脟毛脛鲁赂枚录录脛脺脡媒录露
+	BOOL			ApplyUseItem(int nItemID, ItemPos SrcPos);	// 脧貌路镁脦帽脝梅脡锚脟毛脢鹿脫脙脛鲁赂枚脦茂脝路拢篓脢贸卤锚脫脪录眉碌茫禄梅赂脙脦茂脝路拢漏
+	void			PickUpObj(int nObjIndex);					// 驴脥禄搂露脣脢贸卤锚碌茫禄梅obj录矛脝冒脛鲁赂枚脦茂脝路拢卢脧貌路镁脦帽脝梅路垄脧没脧垄
+	void			ObjMouseClick(int nObjIndex);				// 驴脥禄搂露脣脢贸卤锚碌茫禄梅obj拢卢脧貌路镁脦帽脝梅路垄脧没脧垄
+	void			MoveItem(ItemPos DownPos, ItemPos UpPos);	// DownPos 虏禄脛脺脢脟脢脰拢卢UpPos 卤脴脨毛脢脟脢脰
 	int				ThrowAwayItem();
+	void			ChatAddFriend(int nPlayerIdx);				// 驴脥禄搂露脣脥篓鹿媒卤冒脠脣碌脛脤铆录脫脕脛脤矛潞脙脫脩碌脛脡锚脟毛
+	void			ChatRefuseFriend(int nPlayerIdx);			// 驴脥禄搂露脣戮脺戮酶卤冒脠脣碌脛脤铆录脫脕脛脤矛潞脙脫脩碌脛脡锚脟毛
 	void			TradeApplyOpen(char *lpszSentence, int nLength);
 	void			TradeApplyClose();
-	void			TradeApplyStart(int nNpcIdx, bool bFolkGame);
-	BOOL			TradeMoveMoney(int nMoney);					// 交易时输入自己的钱
-	void			TradeDecision(int nDecision, int nId =-1);				// if nDecision == 0 推出交易  if nDecision == 1 确定交易  if nDecision == 2 取消交易确定
-	void			TradeApplyLock();				// 交易锁定或取消锁定
+	void			TradeApplyStart(int nNpcIdx);
+	BOOL			TradeMoveMoney(int nMoney);					// 陆禄脪脳脢卤脢盲脠毛脳脭录潞碌脛脟庐	
+	void			TradeDecision(int nDecision);				// if nDecision == 0 脥脝鲁枚陆禄脪脳  if nDecision == 1 脠路露篓陆禄脪脳  if nDecision == 2 脠隆脧没陆禄脪脳脠路露篓
+	void			TradeApplyLock(int nLockOrNot);				// 陆禄脪脳脣酶露篓禄貌脠隆脧没脣酶露篓
 
-	void			SetChatCurChannel(int nChannelNo);			// 设定当前聊天频道
-	void			TeamInviteAdd(DWORD dwNpcID);				// 邀请加入队伍
+	void			SetChatCurChannel(int nChannelNo);			// 脡猫露篓碌卤脟掳脕脛脤矛脝碌碌脌
+	void			TeamInviteAdd(DWORD dwNpcID);				// 脩没脟毛录脫脠毛露脫脦茅
 
 	void			SetLeftSkill(int nSkillID);
 	void			SetRightSkill(int nSkillID);
@@ -421,108 +317,104 @@ public:
 	int				GetLeftSkill(){return m_nLeftSkillID;};
 	int				GetRightSkill(){return m_nRightSkillID;};
 	void			SetDefaultImmedSkill();
-	void			s2cApplyAddTeam(BYTE* pProtocol);			// 收到服务器通知有人申请加入队伍
+	void			s2cApplyAddTeam(BYTE* pProtocol);			// 脢脮碌陆路镁脦帽脝梅脥篓脰陋脫脨脠脣脡锚脟毛录脫脠毛露脫脦茅
 	void			s2cTradeChangeState(BYTE* pMsg);
 	void			s2cTradeMoneySync(BYTE* pMsg);
-	void			s2cTradeDecision(BYTE* pMsg);				// 收到服务器通知交易完成或取消
+	void			s2cTradeDecision(BYTE* pMsg);				// 脢脮碌陆路镁脦帽脝梅脥篓脰陋陆禄脪脳脥锚鲁脡禄貌脠隆脧没
 	void			SyncCurPlayer(BYTE* pMsg);
-	BOOL			dacheck;
 	void			s2cLevelUp(BYTE* pMsg);
 	void			s2cGetCurAttribute(BYTE* pMsg);
 	void			s2cSetExp(int nExp);
 	void			s2cSyncMoney(BYTE* pMsg);
 	void			s2cTradeApplyStart(BYTE* pMsg);
-	void			s2cJoinTongReply(BYTE* pMsg);
-	void			s2cSparApplyStart(BYTE* pMsg);
 	void			CheckObject(int nIdx);
-	void			PickObjectNear();
 #endif
+
 #ifdef _SERVER
+	void			SetExtPoint(int nPoint, int nChangePoint);
+	int				GetExtPoint();
+	BOOL			PayExtPoint(int nPoint);
+	int				GetExtPointChanged();
 	void			RepairItem(DWORD dwItemID);
-	void			AutoLoseItem(DWORD dwItemID);
-	void			PlayerBreakItem(DWORD dwItemID, int nNum, BOOL bIsBreakAll = FALSE);
 	BOOL			PrePay(int nMoney);
 	void			SetLastNetOperationTime(int nTime);
-	int				FindAroundPlayer(DWORD dwNpcID);		// 寻找玩家周围的某个指定npc id的player index
-	int				FindAroundNpc(DWORD dwNpcID);			// 寻找玩家周围的某个指定npc id的npc index
-	int				FindNearNpc(int nNpcSettingIdx, int nDist =0);
-	int				FindNearNpc(const char* szName, int nDist =0);
+	int				FindAroundPlayer(DWORD dwNpcID);		// 脩掳脮脪脥忙录脪脰脺脦搂碌脛脛鲁赂枚脰赂露篓npc id碌脛player index
+	int				FindAroundNpc(DWORD dwNpcID);			// 脩掳脮脪脥忙录脪脰脺脦搂碌脛脛鲁赂枚脰赂露篓npc id碌脛npc index
+	BOOL			CheckPlayerAround(int nPlayerIdx);		// 脜脨露脧脛鲁脥忙录脪脢脟路帽脭脷脰脺脦搂
 	BOOL			IsExchangingServer();
 	void			TobeExchangeServer(DWORD dwMapID, int nX, int nY);
+//	void			UpdateEnterGamePos(DWORD dwSubWorldID, int nX, int nY, int nFightMode);
 	BOOL			IsWaitingRemove();
 	BOOL			IsLoginTimeOut();
 	void			WaitForRemove();
 	void			LoginTimeOut();
-	BOOL			UseTownPortal();
-	BOOL			BackToTownPortal();
-	void			GetLoginRevivalPos(int *lpnSubWorld, int *lpnMpsX, int *lpnMpsY);		// 获取玩家登入重生点位置
-	void			GetDeathRevivalPos(int *lpnSubWorld, int *lpnMpsX, int *lpnMpsY);		// 获取玩家死亡重生点位置
-	void			SetRevivalPos(int nSubWorld, int nRevalId);								// 设定玩家重生点ID
-	void			GetLoginRevival(POINT *Pos) {
-		Pos->x = m_sLoginRevivalPos.m_nSubWorldID;
-		Pos->y = m_sLoginRevivalPos.m_ReviveID;
-	};
-	int				GetLoginRevivalID() {return m_sLoginRevivalPos.m_ReviveID;};
-	BOOL			Save();									// 保存玩家数据
+	void			UseTownPortal();
+	void			BackToTownPortal();
+	void			GetLoginRevivalPos(int *lpnSubWorld, int *lpnMpsX, int *lpnMpsY);		// 禄帽脠隆脥忙录脪碌脟脠毛脰脴脡煤碌茫脦禄脰脙
+	void			GetDeathRevivalPos(int *lpnSubWorld, int *lpnMpsX, int *lpnMpsY);		// 禄帽脠隆脥忙录脪脣脌脥枚脰脴脡煤碌茫脦禄脰脙
+	void			SetRevivalPos(int nSubWorld, int nRevalId);								// 脡猫露篓脥忙录脪脰脴脡煤碌茫ID
+	BOOL			Save();									// 卤拢麓忙脥忙录脪脢媒戮脻
 	BOOL			CanSave();
 	void			ProcessUser();
-	BOOL			SendSyncData(int &nStep, unsigned int &nParam);	// 发送同步数据
-	BOOL			SendSyncData_Skill();					// 发送同步数据 - 技能
-	void			SendCurNormalSyncData();				// 发送平时给自己的同步数据
-	void			SetChatForbiddenTm(int nTm)
+	BOOL			SendSyncData(int &nStep, unsigned int &nParam);	// 路垄脣脥脥卢虏陆脢媒戮脻
+	BOOL			SendSyncData_Skill();					// 路垄脣脥脥卢虏陆脢媒戮脻 - 录录脛脺
+	void			SendCurNormalSyncData();				// 路垄脣脥脝陆脢卤赂酶脳脭录潞碌脛脥卢虏陆脢媒戮脻
+	void			SetChatForbiddenFlag(int nFlag)
 	{
-		m_nForbiddenTm = nTm;
+		m_nForbiddenFlag = nFlag;
 	};
-	void			ForbidEnmity(BOOL bFlag);
-	void			ForbidTrade(BOOL bFlag);
-	void			ForbidUseTownP(BOOL bFlag);
-	void			ForbidName(BOOL bFlag);
-	void			ForbidCamp(BOOL bFlag);
 
-	BOOL			AddFaction(char *lpszFactionName);		// 加入门派
-	BOOL			AddFaction(int nFactionID);				// 加入门派
-	BOOL			LeaveCurFaction();						// 离开门派
+	BOOL			AddFaction(char *lpszFactionName);		// 录脫脠毛脙脜脜脡
+	BOOL			AddFaction(int nFactionID);				// 录脫脠毛脙脜脜脡
+	BOOL			LeaveCurFaction();						// 脌毛驴陋脙脜脜脡
+	BOOL			CurFactionOpenSkill(int nLevel);		// 驴陋路脜碌卤脟掳脙脜脜脡脛鲁赂枚碌脠录露碌脛录录脛脺
 
+	void			TaskClearTempVal();						// 脟氓驴脮脠脦脦帽脕脵脢卤卤盲脕驴
+	int				TaskGetSaveVal(int nNo);				// 碌脙碌陆脠脦脦帽脥锚鲁脡脟茅驴枚
+	void			TaskSetSaveVal(int nNo, BOOL bFlag);	// 脡猫露篓脠脦脦帽脥锚鲁脡脟茅驴枚
+	int				TaskGetClearVal(int nNo);				// 碌脙碌陆脠脦脦帽脕脵脢卤鹿媒鲁脤驴脴脰脝卤盲脕驴脰碌
+	void			TaskSetClearVal(int nNo, int nVal);		// 脡猫露篓脠脦脦帽脕脵脢卤鹿媒鲁脤驴脴脰脝卤盲脕驴脰碌
+
+	//void			SetTimeTaskTime(DWORD time){m_dwTimeTaskTime = time;};
 	void			BuyItem(BYTE* pProtocol);
 	void			SellItem(BYTE* pProtocol);
-	void			QuitGame(int nQuitType);				// 退出游戏
-	void			S2CSendTeamInfo(BYTE* pProtocol);		// 收到客户端查询某个npc组队信息的申请后，向这个客户端发送队伍信息
-	void			SendSelfTeamInfo();						// 服务器向客户端发送队伍信息
-	BOOL			CreateTeam(BYTE* pProtocol);			// 收到客户端请求创建一支队伍
-	BOOL			SetTeamState(BYTE* pProtocol);			// 收到客户端请求开放、关闭本player队伍是否允许队员加入状态
-	BOOL			S2CSendAddTeamInfo(BYTE* pProtocol);	// 收到客户端请求加入一支队伍
-	BOOL			AddTeamMember(BYTE* pProtocol);			// 队长通知服务器接受某个npc为队伍成员
-	void			LeaveTeam(BYTE* pProtocol);				// 收到客户端队员通知离开队伍
-	void			SendSystemMessage(const char* szHead, const char* szMessage);
-	void			SendTeamMessage(int nTeamID, const char* szMessage);
-	void			TeamKickOne(BYTE* pProtocol);			// 收到客户端队长通知踢出某个队员
-	BOOL			TeamChangeCaptain(BYTE* pProtocol);		// 收到客户端队长通知把队长身份交给某个队员
-	void			TeamDismiss(BYTE* pProtocol);			// 收到客户端队长请求解散队伍
-	void			SetPK(BYTE* pProtocol);					// 收到客户端请求设定PK状态
-	void			ServerSendChat(BYTE* pProtocol);		// 收到客户端发来的聊天语句
-	void			AddBaseAttribute(BYTE* pProtocol);		// 收到客户端要求增加基本属性点(0=Strength 1=Dexterity 2=Vitality 3=Engergy)
-	int				ResetProp();
-	void			ResetBaseAttribute(BYTE* pProtocol);
-	void			AddSkillPoint(BYTE* pProtocol);			// 收到客户端要求增加某个技能的点数
-	void			IncSkillLevel(int nSkillId, int nAddLevel);
-	void			IncSkillExp(int nSkillId, int nAddExp);
-	BOOL			ServerPickUpItem(BYTE* pProtocol);		// 收到客户端消息鼠标点击某个obj拣起装备或金钱
-	void			EatItem(BYTE* pProtocol);				// 收到客户端消息吃药
-	void			ServerMoveItem(BYTE* pProtocol);		// 收到客户端消息移动物品
-	void			ServerThrowAwayItem(BYTE* pProtocol);	// 收到客户端消息丢弃物品
-	void			TradeApplyOpen(BYTE* pProtocol);		// 收到客户端申请进入待交易状态
-	void			TradeApplyClose(BYTE* pProtocol);		// 收到客户端申请取消待交易状态
-	void			TradeApplyStart(BYTE* pProtocol);		// 收到客户端申请开始交易
-	void			TradeMoveMoney(BYTE* pProtocol);		// 收到客户端申请交易中money的改变
-	void			TradeDecision(BYTE* pProtocol);			// 收到客户端申请交易确定或取消
-	void			TradeFolkGameDecision(BYTE btDecision);			// 收到客户端申请交易确定或取消
+	void			QuitGame(int nQuitType);				// 脥脣鲁枚脫脦脧路
+	void			S2CSendTeamInfo(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣虏茅脩炉脛鲁赂枚npc脳茅露脫脨脜脧垄碌脛脡锚脟毛潞贸拢卢脧貌脮芒赂枚驴脥禄搂露脣路垄脣脥露脫脦茅脨脜脧垄
+	void			SendSelfTeamInfo();						// 路镁脦帽脝梅脧貌驴脥禄搂露脣路垄脣脥露脫脦茅脨脜脧垄
+	BOOL			CreateTeam(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣脟毛脟贸麓麓陆篓脪禄脰搂露脫脦茅
+	BOOL			SetTeamState(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣脟毛脟贸驴陋路脜隆垄鹿脴卤脮卤戮player露脫脦茅脢脟路帽脭脢脨铆露脫脭卤录脫脠毛脳麓脤卢
+	BOOL			S2CSendAddTeamInfo(BYTE* pProtocol);	// 脢脮碌陆驴脥禄搂露脣脟毛脟贸录脫脠毛脪禄脰搂露脫脦茅
+	BOOL			AddTeamMember(BYTE* pProtocol);			// 露脫鲁陇脥篓脰陋路镁脦帽脝梅陆脫脢脺脛鲁赂枚npc脦陋露脫脦茅鲁脡脭卤
+	void			LeaveTeam(BYTE* pProtocol);				// 脢脮碌陆驴脥禄搂露脣露脫脭卤脥篓脰陋脌毛驴陋露脫脦茅
+	void			TeamKickOne(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣露脫鲁陇脥篓脰陋脤脽鲁枚脛鲁赂枚露脫脭卤
+	void			TeamChangeCaptain(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣露脫鲁陇脥篓脰陋掳脩露脫鲁陇脡铆路脻陆禄赂酶脛鲁赂枚露脫脭卤
+	void			TeamDismiss(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣露脫鲁陇脟毛脟贸陆芒脡垄露脫脦茅
+	void			SetPK(BYTE* pProtocol);					// 脢脮碌陆驴脥禄搂露脣脟毛脟贸脡猫露篓PK脳麓脤卢
+	void			SendFactionData(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脟毛脟贸禄帽碌脙脙脜脜脡脢媒戮脻
+	void			ServerSendChat(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣路垄脌麓碌脛脕脛脤矛脫茂戮盲
+	void			AddBaseAttribute(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脪陋脟贸脭枚录脫禄霉卤戮脢么脨脭碌茫(0=Strength 1=Dexterity 2=Vitality 3=Engergy)
+	void			AddSkillPoint(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣脪陋脟贸脭枚录脫脛鲁赂枚录录脛脺碌脛碌茫脢媒
+	BOOL			ServerPickUpItem(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脧没脧垄脢贸卤锚碌茫禄梅脛鲁赂枚obj录冒脝冒脳掳卤赂禄貌陆冒脟庐
+	void			EatItem(BYTE* pProtocol);				// 脢脮碌陆驴脥禄搂露脣脧没脧垄鲁脭脪漏
+	void			ServerMoveItem(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脧没脧垄脪脝露炉脦茂脝路
+	void			ServerThrowAwayItem(BYTE* pProtocol);	// 脢脮碌陆驴脥禄搂露脣脧没脧垄露陋脝煤脦茂脝路
+	void			ChatSetTakeChannel(BYTE* pProtocol);	// 脢脮碌陆驴脥禄搂露脣脧没脧垄脡猫露篓脕脛脤矛露漏脭脛脝碌碌脌
+	void			ChatTransmitApplyAddFriend(BYTE* pProtocol);// 脢脮碌陆驴脥禄搂露脣脟毛脟贸脳陋路垄脕脛脤矛脤铆录脫潞脙脫脩脨脜脧垄
+	BOOL			ChatAddFriend(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣脧没脧垄脤铆录脫脕脛脤矛潞脙脫脩
+	void			ChatRefuseFriend(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脧没脧垄戮脺戮酶脤铆录脫脕脛脤矛潞脙脫脩
+	void			ChatResendAllFriend(BYTE* pProtocol);
+	void			ChatSendOneFriendData(BYTE* pProtocol);
+	void			ChatDeleteFriend(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脡锚脟毛脡戮鲁媒脛鲁赂枚脕脛脤矛潞脙脫脩
+	void			ChatRedeleteFriend(BYTE* pProtocol);	// 脢脮碌陆驴脥禄搂露脣脡锚脟毛脭脵麓脦脡戮鲁媒脛鲁赂枚脕脛脤矛潞脙脫脩
+	void			TradeApplyOpen(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脡锚脟毛陆酶脠毛麓媒陆禄脪脳脳麓脤卢
+	void			TradeApplyClose(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脡锚脟毛脠隆脧没麓媒陆禄脪脳脳麓脤卢
+	void			TradeApplyStart(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脡锚脟毛驴陋脢录陆禄脪脳
+	void			TradeMoveMoney(BYTE* pProtocol);		// 脢脮碌陆驴脥禄搂露脣脡锚脟毛陆禄脪脳脰脨money碌脛赂脛卤盲
+	void			TradeDecision(BYTE* pProtocol);			// 脢脮碌陆驴脥禄搂露脣脡锚脟毛陆禄脪脳脠路露篓禄貌脠隆脧没
 	void			c2sTradeReplyStart(BYTE* pProtocol);
-	void			SyncTradeState(BOOL bSelfAsk = FALSE, BOOL bDestReply = FALSE);						// 给交易双方的客户端发送交易状态信息
-	void			SendEquipItemInfo(int nTargetPlayer);	// 发送自己装备在身上的装备信息给别人看
-
-	void			SparApplyStart(BYTE* pProtocol);		// 收到客户端申请开始交易
-
-	PLAYER_REVIVAL_POS* GetDeathRevivalPos()
+	void			SyncTradeState();						// 赂酶陆禄脪脳脣芦路陆碌脛驴脥禄搂露脣路垄脣脥陆禄脪脳脳麓脤卢脨脜脧垄
+	void			SendEquipItemInfo(int nTargetPlayer);	// 路垄脣脥脳脭录潞脳掳卤赂脭脷脡铆脡脧碌脛脳掳卤赂脨脜脧垄赂酶卤冒脠脣驴麓
+	PLAYER_REVIVAL_POS* GetDeathRevivalPos() 
 	{
 		return &m_sDeathRevivalPos;
 	};
@@ -530,116 +422,89 @@ public:
 	void			SetLoginType(BOOL bUseReviveId) { m_bUseReviveIdWhenLogin = bUseReviveId; };
 
 	BOOL			CreateTong(int nCamp, char *lpszTongName);
-	void			SetNumImg(int nNumber);
-
-	void			TradeStart(BYTE* pProtocol);
-	void			SendTradeCancel();
-	BOOL			SendTradeItem(int nIndex);	// 发送自己设置的出售信息给别人看
-	void			SendTradeCount(int nIndex);
-	int				GetTradeCount();
-
-	void			LoadScript( int nScript); //TamLTM da tau vng
-	void			LoadScriptProgressBar(int nScript); //TamLTM Load progress bar
-	void			Offline();//TamLTM Uy Thac offline
-
-	void			SendMSGroup();
-	void			SendMSRank(TMissionLadderSelfInfo* SelfData, TMissionLadderInfo* RankData);
-
-	void			SetSavePw(char* szTask, BOOL bShow);
-	BOOL			CheckSavePw(const char* szTask);
-
-	void			RecoveryBox(DWORD dwID, int nX, int nY); // TamLTM Kham nam xanh
-
-	int				Compound(int);
-	int				Enchase(int,int,int,int);
 #endif
+
 private:
-//	void			CalcCurStrength();						// 计算当前力量
-//	void			CalcCurDexterity();						// 计算当前敏捷
-//	void			CalcCurVitality();						// 计算当前活力
-//	void			CalcCurEngergy();						// 计算当前精力
-	void			LevelAddBaseLifeMax();					// 等级升一级后增加最大生命点
-	void			LevelAddBaseManaMax();					// 等级升一级后增加最大内力点
-	void			LevelAddBaseStaminaMax();				// 等级升一级后增加最大体力点
+//	void			CalcCurStrength();						// 录脝脣茫碌卤脟掳脕娄脕驴
+//	void			CalcCurDexterity();						// 录脝脣茫碌卤脟掳脙么陆脻
+//	void			CalcCurVitality();						// 录脝脣茫碌卤脟掳禄卯脕娄
+//	void			CalcCurEngergy();						// 录脝脣茫碌卤脟掳戮芦脕娄
+	void			CalcCurLucky();							// 录脝脣茫碌卤脟掳脭脣脝酶
+	void			LevelAddBaseLifeMax();					// 碌脠录露脡媒脪禄录露潞贸脭枚录脫脳卯麓贸脡煤脙眉碌茫
+	void			LevelAddBaseManaMax();					// 碌脠录露脡媒脪禄录露潞贸脭枚录脫脳卯麓贸脛脷脕娄碌茫
+	void			LevelAddBaseStaminaMax();				// 碌脠录露脡媒脪禄录露潞贸脭枚录脫脳卯麓贸脤氓脕娄碌茫
 
-	void			SendFactionData();						// 向客户端发送门派数据
+	void			SendFactionData();						// 脧貌驴脥禄搂露脣路垄脣脥脙脜脜脡脢媒戮脻
 
-	void			SyncCurrentBaseAttriibute(int type,int attribute,int curAttribute);
-	void			AddBaseStrength(int nData);				// 增加基本力量
-	void			AddBaseDexterity(int nData);			// 增加基本敏捷
-	void			AddBaseVitality(int nData);				// 增加基本活力
-	void			AddBaseEngergy(int nData);				// 增加基本精力
+	void			AddBaseStrength(int nData);				// 脭枚录脫禄霉卤戮脕娄脕驴
+	void			AddBaseDexterity(int nData);			// 脭枚录脫禄霉卤戮脙么陆脻
+	void			AddBaseVitality(int nData);				// 脭枚录脫禄霉卤戮禄卯脕娄
+	void			AddBaseEngergy(int nData);				// 脭枚录脫禄霉卤戮戮芦脕娄
+	void			SetNpcPhysicsDamage();					// 脫脡碌卤脟掳脕娄脕驴录脝脣茫露脭脫娄npc碌脛脦茂脌铆脡脣潞娄(PhysicsDamage)
+	void			SetNpcAttackRating();					// 脫脡碌卤脟掳脙么陆脻录脝脣茫露脭脫娄npc碌脛鹿楼禄梅脙眉脰脨脗脢(AttackRating)
+	void			SetNpcDefence();						// 脫脡碌卤脟掳脙么陆脻录脝脣茫露脭脫娄npc碌脛路脌脫霉脕娄
+//	void			SetNpcWalkSpeed();						// 脫脡碌卤脟掳脙么陆脻录脝脣茫露脭脫娄npc碌脛脨脨脳脽脣脵露脠
+//	void			SetNpcRunSpeed();						// 脫脡碌卤脟掳脙么陆脻录脝脣茫露脭脫娄npc碌脛脜脺虏陆脣脵露脠
 
-	void			ResetBaseStrength(int nData);			// 增加基本力量
-	void			ResetBaseDexterity(int nData);			// 增加基本敏捷
-	void			ResetBaseVitality(int nData);			// 增加基本活力
-	void			ResetBaseEngergy(int nData);			// 增加基本精力
-
-	void			SetNpcPhysicsDamage();					// 由当前力量计算对应npc的物理伤害(PhysicsDamage)
-	void			SetNpcAttackRating();					// 由当前敏捷计算对应npc的攻击命中率(AttackRating)
-	void			SetNpcDefence();						// 由当前敏捷计算对应npc的防御力
-//	void			SetNpcWalkSpeed();						// 由当前敏捷计算对应npc的行走速度
-//	void			SetNpcRunSpeed();						// 由当前敏捷计算对应npc的跑步速度
 #ifndef _SERVER
 	void			ProcessMouse(int x, int y, int Key, MOUSE_BUTTON nButton);
-	void			OnButtonUp(int x,int y,MOUSE_BUTTON nButton);				// 处理鼠标键抬起
-	void			OnButtonDown(int x,int y,int Key,MOUSE_BUTTON nButton);		// 处理鼠标键按下
-	void			OnButtonMove(int x,int y,int Key,MOUSE_BUTTON nButton);		// 处理鼠标键按下后移动
-	void			OnMouseMove(int x,int y);									// 处理鼠标移动
+	void			OnButtonUp(int x,int y,MOUSE_BUTTON nButton);				// 麓娄脌铆脢贸卤锚录眉脤搂脝冒
+	void			OnButtonDown(int x,int y,int Key,MOUSE_BUTTON nButton);		// 麓娄脌铆脢贸卤锚录眉掳麓脧脗
+	void			OnButtonMove(int x,int y,int Key,MOUSE_BUTTON nButton);		// 麓娄脌铆脢贸卤锚录眉掳麓脧脗潞贸脪脝露炉
+	void			OnMouseMove(int x,int y);									// 麓娄脌铆脢贸卤锚脪脝露炉
+	int				NetCommandPlayerTalk(BYTE* pProtocol);
 
-	//Question:为单机测试版使用
-	friend			LuaInitStandAloneGame(Lua_State * L);
+	//Question:脦陋碌楼禄煤虏芒脢脭掳忙脢鹿脫脙
+	friend int		LuaInitStandAloneGame(Lua_State* L);
 #endif
 
 
-// 豆豆的东西
+// 露鹿露鹿碌脛露芦脦梅
 private:
 	void			S2CExecuteScript(char * ScriptName, char * szParam);
 
 #ifdef _SERVER
-//数据库模块函数-----------------
+//脢媒戮脻驴芒脛拢驴茅潞炉脢媒-----------------
 private:
 	int				LoadPlayerBaseInfo(BYTE * pRoleBuffer, BYTE * &pRoleBaseBuffer, unsigned int &nParam );
 	int				LoadPlayerItemList(BYTE * pRoleBuffer, BYTE * &pItemBuffer, unsigned int &nParam );
 	int				LoadPlayerFightSkillList(BYTE * pRoleBuffer, BYTE * &pSkillBuffer, unsigned int &nParam);
-	int				LoadPlayerStateSkillList(BYTE * pRoleBuffer, BYTE * &pSkillBuffer, unsigned int &nParam);
+	int				LoadPlayerLifeSkilllList(BYTE * pRoleBuffer, BYTE * &pSkillBuffer, unsigned int &nParam);
+	int				LoadPlayerFriendList(BYTE * pRoleBuffer, BYTE * &pFriendBuffer, unsigned int &nParam);
 	int				LoadPlayerTaskList(BYTE * pRoleBuffer, BYTE * &pTaskBuffer, unsigned int &nParam);
 	int				SavePlayerBaseInfo(BYTE * pRoleBuffer);
 	int				SavePlayerItemList(BYTE * pRoleBuffer);
 	int				SavePlayerFightSkillList(BYTE * pRoleBuffer);
-	int				SavePlayerStateSkillList(BYTE * pRoleBuffer);
+	int				SavePlayerLifeSkilllList(BYTE * pRoleBuffer);
+	int				SavePlayerFriendList(BYTE * pRoleBuffer);
 	int				SavePlayerTaskList(BYTE * pRoleBuffer);
-
 #endif
 
 public:
 	void			SetNpcDamageAttrib();
-	void			DoScriptAction(PLAYER_SCRIPTACTION_SYNC * pUIInfo); //通知该客户端显示某个UI界面
-	void			ProcessPlayerSelectFromUI(BYTE* pProtocol);			// 处理当玩家从选择菜单选择某项时的操作
+	void			DoScriptAction(PLAYER_SCRIPTACTION_SYNC * pUIInfo); //脥篓脰陋赂脙驴脥禄搂露脣脧脭脢戮脛鲁赂枚UI陆莽脙忙
+	void			ProcessPlayerSelectFromUI(BYTE* pProtocol);			// 麓娄脌铆碌卤脥忙录脪麓脫脩隆脭帽虏脣碌楼脩隆脭帽脛鲁脧卯脢卤碌脛虏脵脳梅
 #ifndef _SERVER
 	void			DialogNpc(int nIndex);
-	void			OnSelectFromUI(PLAYER_SELECTUI_COMMAND * pSelectUI, UIInfo eUIInfo);//当玩家从选择框中选择某项后，将向服务器发送
+	void			OnSelectFromUI(PLAYER_SELECTUI_COMMAND * pSelectUI, UIInfo eUIInfo);//碌卤脥忙录脪麓脫脩隆脭帽驴貌脰脨脩隆脭帽脛鲁脧卯潞贸拢卢陆芦脧貌路镁脦帽脝梅路垄脣脥			
 	void			OnScriptAction(PLAYER_SCRIPTACTION_SYNC * );
 #endif
 #ifdef _SERVER
-	void			RestoreLiveData();						//重生后恢复玩家的基本数据
-	void			SetTimer(DWORD nTime, int nTimeTaskId);//时间任务脚本，开启计时器
-	void			CloseTimer();							//关闭时间计时器
+	void			RestoreLiveData();						//脰脴脡煤潞贸禄脰赂麓脥忙录脪碌脛禄霉卤戮脢媒戮脻
+	void			SetTimer(DWORD nTime, int nTimeTaskId);//脢卤录盲脠脦脦帽陆脜卤戮拢卢驴陋脝么录脝脢卤脝梅
+	void			CloseTimer();							//鹿脴卤脮脢卤录盲录脝脢卤脝梅
 
 	int				AddDBPlayer(char * szPlayerName, int sex, DWORD * pdwID );
 	int				LoadDBPlayerInfo(BYTE * pPlayerInfo,  int &nStep, unsigned int &nParam);
 	BOOL			GetNewPlayerFromIni(KIniFile * pIniFile, BYTE * pRoleBuffer);
 	int				UpdateDBPlayerInfo(BYTE * pPlayerInfo);
-	int				DeletePlayer(char * szPlayerName = NULL);//注意：本函数是清除玩家帐号！！！，不能乱用
+	int				DeletePlayer(char * szPlayerName = NULL);//脳垄脪芒拢潞卤戮潞炉脢媒脢脟脟氓鲁媒脥忙录脪脮脢潞脜拢隆拢隆拢隆拢卢虏禄脛脺脗脪脫脙
 	void			LaunchPlayer();
 	BOOL			Pay(int nMoney);
 	BOOL			Earn(int nMoney);
 	void			DialogNpc(BYTE * pProtocol);
 
-	void			SetBaseStrength(int nData);
-	void			SetBaseDexterity(int nData);
-	void			SetBaseVitality(int nData);
-	void			SetBaseEngergy(int nData);
+	int				AddTempTaskValue(void* pData);
 #endif
 };
 
@@ -649,4 +514,3 @@ extern CORE_API KPlayer	Player[MAX_PLAYER];
 extern KPlayer	Player[MAX_PLAYER];
 #endif
 #endif //KPlayerH
-
