@@ -11,7 +11,7 @@
 #include "KNpc.h"
 #include "KSubWorld.h"
 //#include "KNetClient.h"
-#include "../MultiServer/Rainbow/Interface/iClient.h"
+#include "../../Headers/IClient.h"
 #include "KScriptValueSet.h"
 #include "KNpcSet.h"
 #include "KPlayer.h"
@@ -20,6 +20,7 @@ KScriptList g_StoryScriptList;
 KStepLuaScript * LuaGetScript(Lua_State * L);
 
 int LuaAddNpcFromTemplate(Lua_State * L);
+int LuaAddNpcNew(Lua_State* L);
 int LuaMessageBox(Lua_State * L);
 int LuaSendScriptMessage(Lua_State * L);
 int LuaWaitForEvent(Lua_State * L);
@@ -30,26 +31,15 @@ int LuaWait(Lua_State * L);
 int LuaEndWait(Lua_State * L);
 int LuaNewScript(Lua_State * L);
 int LuaGotoLabel(Lua_State * L);
-int LuaNpcGoto(Lua_State * L);
-int LuaNpcTalk(Lua_State * L);
-int LuaNpcGotoEx(Lua_State * L);
-int LuaGetNpcPos(Lua_State * L);
 int LuaGetValue(Lua_State * L);
 int LuaSetValue(Lua_State * L);
 int LuaReturn(Lua_State * L);
-int LuaAddNpcClient(Lua_State * L);
-int LuaSetPlayer(Lua_State * L);
-int LuaInitStandAloneGame(Lua_State * L);
-int LuaCastSkill(Lua_State *L);
-int LuaGetNpcTalk(Lua_State * L);
 int LuaResume(Lua_State * L);
 int LuaLabel(Lua_State * L);
 int LuaGetTempTaskValue(Lua_State * L);
 int LuaSetTempTaskValue(Lua_State * L);
 
-#ifdef _SERVER
-int LuaTaskSay(Lua_State * L);
-#endif
+
 
 CORE_API TLua_Funcs SysFuns[] = 
 {
@@ -63,23 +53,10 @@ CORE_API TLua_Funcs SysFuns[] =
 {"SendScriptMessage", LuaSendScriptMessage},
 {"WaitForEvent", LuaWaitForEvent},
 {"SendMessage",LuaSendMessage},
-{"NpcGoto", LuaNpcGoto},
-{"Talk", LuaNpcTalk},
-{"NpcGotoEx",LuaNpcGotoEx},
-{"GetNpcPos", LuaGetNpcPos},
 {"SetValue",LuaSetValue},
 {"GetValue", LuaGetValue},
 {"Exit",LuaReturn},
-{"AddNpc",LuaAddNpcClient},
-{"SetPlayer",LuaSetPlayer},
-{"InitGameWorld",LuaInitStandAloneGame},
-{"CastSkill", LuaCastSkill},
-{"GetNpcTalk",LuaGetNpcTalk},
 {"Resume", LuaResume},
-{"InsertNpc", LuaAddNpcFromTemplate},
-#ifdef _SERVER
-{"TaskSay", LuaTaskSay},
-#endif
 };
 
 CORE_API int g_GetLuaFunsCount()
@@ -129,7 +106,7 @@ int LuaNewScript(Lua_State * L)
 		return 1;
 	}
 
-	g_SetFilePath("\\Script");
+	g_SetFilePath("\\script");
 	char FilePath[200];
 	g_GetFullPath(FilePath, (char *)szScriptFIle);
 	if (!pScript->Load(( char *)FilePath))
@@ -179,7 +156,7 @@ int LuaGetScriptState(Lua_State * L)
 
 	pScript = LuaGetScript(L);
 	
-	//ä¸å­˜åœ¨
+	//²»´æÔÚ
 	if(pScript == NULL)
 	{
 		Lua_PushNumber(L, -1);
@@ -205,7 +182,7 @@ int LuaSendScriptMessage(Lua_State * L)
 	
 	if (pSendedScript == NULL)
 	{
-		g_DebugLog("æ— æ³•æ‰¾åˆ°æŒ‡å®šçš„è„šæœ¬å¯¹è±¡");
+		g_DebugLog("ÎÞ·¨ÕÒµ½Ö¸¶¨µÄ½Å±¾¶ÔÏó");
 		return 0;
 	}
 	
@@ -232,109 +209,6 @@ int LuaWaitForEvent(Lua_State * L)
 	KStepLuaScript * pScript = (KStepLuaScript *)g_StoryScriptList.GetScript(L);
 	strcpy(pScript->GetWaitingMsg()	, lua_tostring(L, 1));
 	pScript->RunWaitMsg();
-	return 0;
-}
-
-int LuaGetNpcPos(Lua_State * L)
-{
-	char szName[100];
-	strcpy(szName, lua_tostring(L,1));
-	
-	for(int i  = 0 ; i < MAX_NPC; i ++)
-	{
-		if (Npc[i].m_dwID <= 0)		continue;
-		if (!strcmp(Npc[i].Name, szName))	break;
-		
-	}
-	if (i >= MAX_NPC) return 0 ;
-	
-	int nCurPosX, nCurPosY;
-	Npc[i].GetMpsPos(&nCurPosX,&nCurPosY);
-	lua_pushnumber(L, nCurPosX);
-	lua_pushnumber(L, nCurPosY);
-	return 2;
-}
-
-int LuaNpcGotoEx(Lua_State * L)
-{
-	char szName[100];
-	strcpy(szName, lua_tostring(L,1));
-	
-	for(int i  = 0 ; i < MAX_NPC; i ++)
-	{
-		if (Npc[i].m_dwID <= 0)		continue;
-		if (!strcmp(Npc[i].Name, szName))	break;
-		
-	}
-	if (i >= MAX_NPC) return 0 ;
-	
-	int nDesX = (int)lua_tonumber(L,2);
-	int nDesY = (int)lua_tonumber(L,3);
-	
-	KStepLuaScript * pScript = (KStepLuaScript *)g_StoryScriptList.GetScript(L);
-	Npc[i].SendCommand(do_walk, nDesX, nDesY);
-	return 0;
-}
-
-int LuaNpcGoto(Lua_State * L)
-{
-	char szName[100];
-	strcpy(szName, lua_tostring(L,1));
-
-	for(int i  = 0 ; i < MAX_NPC; i ++)
-	{
-		if (Npc[i].m_dwID <= 0)		continue;
-		if (!strcmp(Npc[i].Name, szName))	break;
-		
-	}
-	if (i >= MAX_NPC) return 0 ;
-
-	int nDesX = (int)lua_tonumber(L,2);
-	int nDesY = (int)lua_tonumber(L,3);
-	
-	KStepLuaScript * pScript = (KStepLuaScript *)g_StoryScriptList.GetScript(L);
-	if(pScript->IsRunMain())
-	{
-		Npc[i].SendCommand(do_walk, nDesX, nDesY);
-		BYTE	NetCommand[9];
-		NetCommand[0] = (BYTE)c2s_npcwalk;
-		*(int *)&NetCommand[1] = nDesX;
-		*(int *)&NetCommand[5] = nDesY;
-		SendToServer(NetCommand, sizeof(NetCommand));
-		pScript->RunFunc();
-	}
-	else
-	{
-		int nSrcX = 0;
-		int nSrcY = 0;
-
-		SubWorld[Npc[i].m_SubWorldIndex].Map2Mps(Npc[i].m_RegionIndex, Npc[i].m_MapX, Npc[i].m_MapY, Npc[i].m_OffX, Npc[i].m_OffY, &nSrcX, &nSrcY);
-		if ( abs(nSrcX - nDesX) < Npc[i].m_WalkSpeed && abs(nSrcY - nDesY) < Npc[i].m_WalkSpeed)
-			pScript->RunMain();
-		else
-			Npc[i].SendCommand(do_walk, nDesX, nDesY);
-	}
-	return 0;
-}
-
-int LuaNpcTalk(Lua_State * L)
-{
-	char szName[100];
-	strcpy(szName, lua_tostring(L,1));
-	if (!szName) return 0;
-	for(int i  = 0 ; i < MAX_NPC; i ++)
-	{
-		if (Npc[i].m_dwID <= 0)		continue;
-		if (!strcmp(Npc[i].Name, szName))	break;
-	}
-
-	if (i >= MAX_NPC) return 0 ;
-	char *szTalk;
-	szTalk = (char *)lua_tostring(L, 2);
-	
-	Npc[i].DoPlayerTalk(szTalk);
-	strcpy(Npc[i].m_szChatBuffer, szTalk);
-	Npc[i].m_nCurChatTime = NPC_SHOW_CHAT_TIME_LENGTH;
 	return 0;
 }
 
@@ -423,159 +297,7 @@ int LuaReturn(Lua_State *L)
 	pScript->RunIdle();
 	return 0;
 }
-//AddNpcï¼ˆ"*.ini", Name, map, x, y, directionï¼‰
-//AddNpcFromTemplate(Name, Level, subworld, x, y) 
-int LuaAddNpcFromTemplate(Lua_State * L)
-{
-	const char * pName = lua_tostring(L,1);	
-	int nId = g_NpcSetting.FindRow((char*)pName) - 2;
-	if (nId < 0) nId = 0;
 
-
-	int nLevel = (int)lua_tonumber(L,2);
-	if (nLevel >= 128) nLevel = 127;
-	if (nLevel < 0 ) nLevel = 1;
-
-	int	nNpcIdxInfo = (nId << 7) + nLevel;
-	
-	int nNpcIdx = NpcSet.Add(nNpcIdxInfo, (int)lua_tonumber(L, 3), (int)lua_tonumber(L,4), (int)lua_tonumber(L,5));
-	g_StrCpy(Npc[nNpcIdx].Name, (char*)pName);
-#ifndef _SERVER
-	Npc[nNpcIdx].m_dwID = (DWORD)lua_tonumber(L,6);
-#endif
-
-	if (nNpcIdx <= 0) return 0;
-	return 0;
-}
-
-int LuaAddNpcClient(Lua_State * L)
-{
-	const char * pIniFile = lua_tostring(L,1);	
-	const char * pName = lua_tostring(L,2);
-	int	nNpcIdx;
-	
-	if (pIniFile[0])
-	{
-		KIniFile IniFile;
-		if (IniFile.Load("pIniFile"))
-			NpcSet.Add(&IniFile, (char*)pName);
-		else 
-			return 0;
-	}
-	else
-	{
-		nNpcIdx = NpcSet.Add(1, 0, 0,(int)lua_tonumber(L,4), (int)lua_tonumber(L,5));
-		g_StrCpy(Npc[nNpcIdx].Name, (char*)pName);
-		
-#ifdef TOOLVERSION
-		//æŠ€èƒ½ç¼–ç¼‰å™¨æš‚æ—¶è¿™æ ·ç”¨
-		//Question
-		for (int i  = 0 ; i < 100; i ++)//
-			Npc[nNpcIdx].m_SkillList.Add(i+1);
-#endif
-	}
-	
-	Npc[nNpcIdx].m_dwID = (DWORD)lua_tonumber(L,6);
-	if (nNpcIdx <= 0) return 0;
-	return 0;
-}
-
-
-//SetPlayer("Name");
-int LuaSetPlayer(Lua_State * L)
-{
-	for (int i  = 0 ; i < MAX_REGION; i ++)
-		SubWorld[0].m_Region[i].Init(400,400);
-
-	int nIdx = NpcSet.SearchName((char *)lua_tostring(L,1));
-	if (nIdx == 0)  return 0;
-	Player[CLIENT_PLAYER_INDEX].m_nIndex = nIdx;
-	Player[CLIENT_PLAYER_INDEX].m_dwID = Npc[nIdx].m_dwID;
-	return 0;
-}
 CORE_API FILE *stream1;
 CORE_API FILE* stream;
-
-int LuaInitStandAloneGame(Lua_State * L)
-{
-#ifndef _SERVER
-	/*
-	WORLD_SYNC sync;
-	sync.ProtocolType = 6;
-	sync.SubWorld = 1000;
-	sync.Frame = 0;
-	sync.Region = 0;
-	sync.Weather = 0;
-	Player[CLIENT_PLAYER_INDEX].SyncWorld((BYTE *)&sync);
-	CURPLAYER_SYNC cursyn;
-	cursyn.m_dwID = Player[CLIENT_PLAYER_INDEX].m_dwID;
-	cursyn.ProtocolType = 10;
-	Player[CLIENT_PLAYER_INDEX].SyncCurPlayer((BYTE*)&cursyn);
-//	printf("ok!");
-//	fprintf(sout,"Hello World!");
-//	fflush(sout);
-/*	stream = freopen( "d:\\output.txt", "w", stdout );
-	stream1 = freopen( "d:\\error.txt", "w", stderr );
-	printf("abc");
-	if (stream == NULL )
-	{
-		printf("error !");
-		return 0;
-	}
-	if (stream1 == NULL )
-	{
-		printf("error !");
-		return 0;
-	}
-*/	
-#endif
-	return 0;
-}
-//CastSkill(SrcNpcName, nSkillId, nParam1, nParam2);
-int LuaCastSkill(Lua_State * L)
-{
-	char * SrcNpcName = (char *)lua_tostring(L,1);
-	int nSrc = NpcSet.SearchName(SrcNpcName);
-	
-	if (nSrc == 0 ) return 0;
-	Npc[nSrc].SendCommand(do_skill, (int)lua_tonumber(L,2), (int)lua_tonumber(L,3), (int)lua_tonumber(L,4));
-	return 0;
-}
-
-int LuaGetNpcTalk(Lua_State * L)
-{
-	int argnum = lua_gettop(L);
-	if (argnum == 0) 
-	{
-		lua_pushstring(L,""); return 1;
-	}
-
-	char  SrcNpcName[100] ;
-	strcpy(SrcNpcName,(char *)lua_tostring(L,1));
-	int nSrc = NpcSet.SearchName(SrcNpcName);
-	
-	if (nSrc == 0 ) lua_pushstring(L," ");
-	else
-	{
-		
-		char c1 = 19;
-		char c2 = 13;
-		
-		char *strBuf ;
-		if (Npc[nSrc].m_szChatBuffer[0] == 19) strBuf = Npc[nSrc].m_szChatBuffer + 2;
-		else
-		{
-			strBuf = Npc[nSrc].m_szChatBuffer;
-		}
-		
-
-		int len = strlen(strBuf);
-		if (strBuf[len - 1] == 13)
-			strBuf[len -1] = 0;
-		lua_pushstring(L,strBuf);
-		
-		return 1;
-	}
-	return 1;
-}
 #endif
